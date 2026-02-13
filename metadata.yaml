@@ -1,0 +1,6 @@
+name: astrbot_plugin_response_enhancer
+display_name: ResponseEnhancer
+desc: 通过 function calling 赋予 LLM 引用回复、@用户、表情回应、禁言、屏蔽等增强能力。
+version: v0.2.0
+author: acacia
+repo: https://example.com/astrbot_plugin_response_enhancer

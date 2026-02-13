@@ -1,0 +1,14 @@
+{
+  "mute_max_seconds": {
+    "description": "禁言时长上限（秒）",
+    "type": "int",
+    "default": 86400,
+    "hint": "LLM 调用 mute_user 工具时，禁言时长不会超过此值。默认 86400（1天）"
+  },
+  "silence_scope_default": {
+    "description": "屏蔽默认作用域",
+    "type": "string",
+    "default": "session",
+    "hint": "LLM 调用 silence_user 工具时的默认作用域：session（仅当前会话）或 global（全局）"
+  }
+}
