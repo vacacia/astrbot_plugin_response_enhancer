@@ -1,4 +1,46 @@
 {
+  "enable_react_emoji": {
+    "description": "启用表情回应功能",
+    "type": "bool",
+    "default": true,
+    "hint": "是否允许 LLM 使用 react_emoji 工具对消息进行表情回应"
+  },
+  "enable_skip_reply": {
+    "description": "启用跳过回复功能",
+    "type": "bool",
+    "default": true,
+    "hint": "是否允许 LLM 使用 skip_reply 工具选择不回复消息"
+  },
+  "enable_silence_user": {
+    "description": "启用屏蔽用户功能",
+    "type": "bool",
+    "default": true,
+    "hint": "是否允许 LLM 使用 silence_user 工具屏蔽骚扰用户"
+  },
+  "enable_get_silence_list": {
+    "description": "启用查询拉黑列表功能",
+    "type": "bool",
+    "default": true,
+    "hint": "是否允许 LLM 使用 get_silence_list 工具查询当前被拉黑用户及截止时间"
+  },
+  "enable_get_group_owner": {
+    "description": "启用查询群主功能",
+    "type": "bool",
+    "default": true,
+    "hint": "是否允许 LLM 使用 get_group_owner_info 工具查询群主信息"
+  },
+  "enable_get_group_admins": {
+    "description": "启用查询管理员功能",
+    "type": "bool",
+    "default": true,
+    "hint": "是否允许 LLM 使用 get_group_admins_info 工具查询管理员列表"
+  },
+  "enable_get_group_member_count": {
+    "description": "启用查询群人数功能",
+    "type": "bool",
+    "default": true,
+    "hint": "是否允许 LLM 使用 get_group_member_count 工具查询群成员数量"
+  },
   "mute_max_seconds": {
     "description": "禁言时长上限（秒）",
     "type": "int",

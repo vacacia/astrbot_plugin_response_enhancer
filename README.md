@@ -1,6 +1,6 @@
 # ResponseEnhancer
 
-通过 **function calling** 赋予 LLM 引用回复、@用户、表情回应、禁言、屏蔽等增强能力。
+通过 **function calling** 赋予 LLM 表情回应、跳过回复、屏蔽用户、查询拉黑列表、查询群信息等能力。
 
 LLM 在对话中自主判断何时使用这些工具
 
@@ -8,11 +8,13 @@ LLM 在对话中自主判断何时使用这些工具
 
 | 工具名 | 说明 | 关键参数 |
 |---|---|---|
-| `reply_message` | 引用回复消息，可 @用户 | `text`, `reply_to_message_id`, `at_user_ids` |
-| `send_message_at` | 发送消息，可 @用户 | `text`, `at_user_ids` |
-| `react_emoji` | 对消息添加表情回应（群聊） | `emoji_id`, `message_id` |
-| `mute_user` | 群禁言（需 Bot 管理员权限） | `user_id`, `duration_seconds` |
+| `react_emoji` | 对消息添加表情回应（群聊） | `emoji` |
+| `skip_reply` | 主动跳过本轮回复 | `reason` |
 | `silence_user` | 屏蔽用户请求（不需要平台权限） | `user_id`, `duration_seconds`, `scope` |
+| `get_silence_list` | 查询当前拉黑（屏蔽）列表，含截止时间 | `scope` |
+| `get_group_owner_info` | 查询当前群主信息 | - |
+| `get_group_admins_info` | 查询当前管理员列表 | - |
+| `get_group_member_count` | 查询当前群人数 | - |
 
 ## 工作原理
 
@@ -24,6 +26,13 @@ LLM 在对话中自主判断何时使用这些工具
 
 | 配置项 | 说明 | 默认值 |
 |---|---|---|
+| `enable_react_emoji` | 是否启用表情回应工具 | `true` |
+| `enable_skip_reply` | 是否启用跳过回复工具 | `true` |
+| `enable_silence_user` | 是否启用屏蔽用户工具 | `true` |
+| `enable_get_silence_list` | 是否启用拉黑列表查询工具 | `true` |
+| `enable_get_group_owner` | 是否启用群主查询工具 | `true` |
+| `enable_get_group_admins` | 是否启用管理员查询工具 | `true` |
+| `enable_get_group_member_count` | 是否启用群人数查询工具 | `true` |
 | `mute_max_seconds` | 禁言时长上限（秒） | 86400 |
 | `silence_scope_default` | 屏蔽默认作用域（session / global） | session |
 
@@ -31,13 +40,15 @@ LLM 在对话中自主判断何时使用这些工具
 
 可在 Bot 人格/系统提示词中引导 LLM 使用这些工具，例如：
 
-> - 当用户明确要求 @某人时，使用 send_message_at 工具
-> - 当用户严重违规时，可以使用 mute_user 或 silence_user 工具
-> - 回复特定消息时，使用 reply_message 工具并指定 message_id
+> - 当用户在群里问“群主是谁”时，使用 `get_group_owner_info`
+> - 当用户问“管理员都有谁”时，使用 `get_group_admins_info`
+> - 当用户问“群里多少人”时，使用 `get_group_member_count`
+> - 当用户问“拉黑了哪些人/到什么时候”时，使用 `get_silence_list`
+> - 当用户骚扰 Bot 时，使用 `silence_user`
 
 ## 注意事项
 
-- `react_emoji` 和 `mute_user` 仅在群聊且平台支持时生效
+- `react_emoji` 仅在群聊且平台支持时生效
 - `silence_user` 是插件级屏蔽（基于 KV 存储），不依赖平台管理员权限
 - 被屏蔽的用户在屏蔽期内的 LLM 请求会被 `on_llm_request` 拦截
-
+- `get_group_owner_info` / `get_group_admins_info` / `get_group_member_count` 依赖群成员 API，平台不支持时会返回失败信息
