@@ -11,7 +11,14 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
 
-from .core import AvatarMixin, CommonMixin, GroupMixin, ImageContextMixin, SilenceMixin
+from .core import (
+    AvatarMixin,
+    CommonMixin,
+    ForwardContextMixin,
+    GroupMixin,
+    ImageContextMixin,
+    SilenceMixin,
+)
 """
 # 建议将“何时调用工具”的策略补充在人格设定里。
 贴表情工具:
@@ -30,6 +37,9 @@ from .core import AvatarMixin, CommonMixin, GroupMixin, ImageContextMixin, Silen
 最近图片上下文工具:
     - 上下文出现 [图片]、代词指代（这张/那个/它）、或图片评价问题但用户未显式引用图片时：
     - 优先调用最近图片上下文工具，识图后再回答；仅在确定与图片无关时才跳过。
+合并转发上下文工具:
+    - 优先处理“引用消息里的合并转发”；若未引用，可回看最近消息中的合并转发。
+    - 可用于混合内容（文本/图片/表情/视频占位）的转发消息理解。
 """
 
 # region 伪工具调用正则
@@ -37,7 +47,7 @@ from .core import AvatarMixin, CommonMixin, GroupMixin, ImageContextMixin, Silen
 # 可能出现在整条消息开头，也可能追加在正常回复末尾
 # 例如 "blabla\ntool_react_emoji: 😜"
 _FAKE_TOOL_CALL_RE = re.compile(
-    r"\n?\s*(?:tool_)?(?:react_emoji|skip_reply|reply_message|send_message_at|silence_user|mute_user|get_silence_list|get_group_owner_info|get_group_admins_info|get_group_member_count|get_user_avatar|get_recent_image_context)\s*[:：].*$",
+    r"\n?\s*(?:tool_)?(?:react_emoji|skip_reply|reply_message|send_message_at|silence_user|mute_user|get_silence_list|get_group_owner_info|get_group_admins_info|get_group_member_count|get_user_avatar|get_recent_image_context|get_forward_context)\s*[:：].*$",
     re.IGNORECASE | re.DOTALL,
 )
 # endregion 伪工具调用正则
@@ -80,6 +90,7 @@ _EMOJI_ID_TO_NAME = {v: k for k, v in EMOJI_MAP.items()}
 class ResponseEnhancer(
     AvatarMixin,
     ImageContextMixin,
+    ForwardContextMixin,
     GroupMixin,
     SilenceMixin,
     CommonMixin,
@@ -108,6 +119,74 @@ class ResponseEnhancer(
         if await self._is_silenced(event):
             event.should_call_llm(False)
             event.stop_event()
+            return
+
+        self._inject_reply_type_hint_into_prompt(event=event, req=req)
+
+    def _inject_reply_type_hint_into_prompt(
+        self,
+        event: AstrMessageEvent,
+        req: ProviderRequest,
+    ) -> None:
+        """把“引用消息类型”提示注入 prompt，降低模型误判工具的概率。"""
+        try:
+            segments = list(event.get_messages() or [])
+        except Exception:
+            segments = []
+
+        reply_seg = next(
+            (segment for segment in segments if isinstance(segment, Comp.Reply)),
+            None,
+        )
+        if reply_seg is None:
+            return
+
+        tags = self._collect_reply_type_tags(reply_seg)
+        if not tags:
+            tags = ["[引用消息]"]
+
+        tags_text = " ".join(list(dict.fromkeys(tags)))
+        hint = (
+            "\n\n[引用消息提示] 当前用户消息包含引用。"
+            f"引用内容类型: {tags_text}。"
+            "若用户提问出现“这/里面/上面”等指代词，先按引用对象判断，再选择合适工具。"
+        )
+        prompt = str(req.prompt or "")
+        if hint in prompt:
+            return
+        req.prompt = prompt + hint
+
+    def _collect_reply_type_tags(self, reply_seg: Comp.Reply) -> list[str]:
+        tags: list[str] = ["[引用消息]"]
+        video_cls = getattr(Comp, "Video", None)
+
+        try:
+            reply_chain = list(getattr(reply_seg, "chain", []) or [])
+        except Exception:
+            reply_chain = []
+
+        for segment in reply_chain:
+            if isinstance(segment, Comp.Forward):
+                tags.append("[合并转发]")
+            elif isinstance(segment, Comp.Image):
+                tags.append("[图片]")
+            elif video_cls and isinstance(segment, video_cls):
+                tags.append("[视频]")
+            elif isinstance(segment, Comp.Face):
+                tags.append("[表情]")
+            elif isinstance(segment, Comp.File):
+                tags.append("[文件]")
+
+        # 兼容某些平台没有填充 chain，仅能从 message_str 推断
+        message_str = str(getattr(reply_seg, "message_str", "") or "")
+        if "[合并转发]" in message_str or "[转发消息]" in message_str:
+            tags.append("[合并转发]")
+        if "[图片]" in message_str:
+            tags.append("[图片]")
+        if "[视频]" in message_str:
+            tags.append("[视频]")
+
+        return list(dict.fromkeys(tags))
     # endregion 屏蔽被拉黑用户
 
     # region 清理伪工具调用文本
@@ -469,3 +548,45 @@ class ResponseEnhancer(
         )
         return json.dumps(result, ensure_ascii=False)
     # endregion 提取最近图片上下文
+
+    # region 提取合并转发上下文
+
+    @filter.llm_tool(name="get_forward_context")
+    async def tool_get_forward_context(
+        self,
+        event: AstrMessageEvent,
+        target_user_id: str | None = None,
+        lookback_count: int = 30,
+        allow_group_fallback: bool = True,
+    ):
+        """
+        提取合并转发消息上下文，展开嵌套内容并返回结构化结果。
+
+        Args:
+            target_user_id(string): 优先匹配的目标用户 QQ 号，不传时默认当前发言者
+            lookback_count(number): 从最近群消息中回看条数，默认 30，范围 5~200
+            allow_group_fallback(boolean): 当目标用户近期无转发时，是否回退到群内最近其他转发，默认 true
+        """
+        resolved_target_user_id = str(
+            target_user_id or event.get_sender_id() or ""
+        ).strip()
+        if not resolved_target_user_id.isdigit():
+            return json.dumps(
+                {
+                    "target_user_id": resolved_target_user_id,
+                    "error": "target_user_id 必须是纯数字 QQ 号",
+                },
+                ensure_ascii=False,
+            )
+
+        user_request = self._extract_user_request(event)
+        allow_group_fallback = self._to_bool(allow_group_fallback, default=True)
+        result = await self._get_forward_context_result(
+            event=event,
+            target_user_id=resolved_target_user_id,
+            lookback_count=lookback_count,
+            allow_group_fallback=allow_group_fallback,
+            user_request=user_request,
+        )
+        return json.dumps(result, ensure_ascii=False)
+    # endregion 提取合并转发上下文
