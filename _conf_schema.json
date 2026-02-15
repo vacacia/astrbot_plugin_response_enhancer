@@ -29,5 +29,18 @@
     "default": "",
     "_special": "select_provider",
     "hint": "用于 get_user_avatar 工具内二次视觉识别。留空时使用当前会话模型。建议选择支持图片输入的 Provider"
+  },
+  "image_context_vision_provider_id": {
+    "description": "图片上下文识别模型提供商",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider",
+    "hint": "用于 get_recent_image_context 工具内二次视觉识别。留空时回退到头像识别模型或当前会话模型"
+  },
+  "image_context_history_rounds": {
+    "description": "图片检索历史轮数",
+    "type": "int",
+    "default": 3,
+    "hint": "get_recent_image_context 查询群历史消息的轮数（每轮按 lookback_count 查询）"
   }
 }

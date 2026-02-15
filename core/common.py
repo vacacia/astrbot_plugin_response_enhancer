@@ -28,3 +28,17 @@ class CommonMixin:
         if value > max_value:
             return max_value
         return value
+
+    @staticmethod
+    def _to_bool(value: Any, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on", "是", "开"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", "否", "关"}:
+            return False
+        return default

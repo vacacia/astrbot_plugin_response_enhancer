@@ -16,6 +16,7 @@ LLM 在对话中自主判断何时使用这些工具
 | `get_group_admins_info` | 查询当前管理员列表 | - |
 | `get_group_member_count` | 查询当前群人数 | - |
 | `get_user_avatar` | 获取用户头像并在工具内二次视觉识别 | `user_id` |
+| `get_recent_image_context` | 提取当前/最近群聊图片并在工具内二次视觉识别 | `target_user_id`, `lookback_count`, `allow_group_fallback` |
 
 ## 工作原理
 
@@ -30,6 +31,8 @@ LLM 在对话中自主判断何时使用这些工具
 | `avatar_size` | 下载头像时的目标尺寸（像素，用于头像识别输入） | 640 |
 | `avatar_download_timeout` | 头像下载超时时间（秒） | 10 |
 | `avatar_vision_provider_id` | 头像识别模型提供商（Provider） | `""` |
+| `image_context_vision_provider_id` | 图片上下文识别模型提供商（Provider） | `""` |
+| `image_context_history_rounds` | 图片历史检索轮数 | 3 |
 | `mute_max_seconds` | 禁言时长上限（秒） | 86400 |
 | `silence_scope_default` | 屏蔽默认作用域（session / global） | session |
 
@@ -51,3 +54,4 @@ LLM 在对话中自主判断何时使用这些工具
 - `get_group_owner_info` / `get_group_admins_info` / `get_group_member_count` 依赖群成员 API，平台不支持时会返回失败信息
 - `get_user_avatar` 在工具内调用 VLM 识别头像，并把“完整描述 + 识别结论 + 面向用户回答”返回给对话模型
 - `avatar_vision_provider_id` 留空时，默认跟随当前会话使用的模型提供商
+- `get_recent_image_context` 支持“当前消息图片 + 近期群聊图片回看”，适用于用户没引用图片但语义明显在接图的场景
