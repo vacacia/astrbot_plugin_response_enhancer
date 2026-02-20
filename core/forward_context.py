@@ -12,6 +12,7 @@ from astrbot.api.event import AstrMessageEvent
 
 
 class ForwardContextMixin:
+    # region 转发上下文主流程
     async def _get_forward_context_result(
         self,
         event: AstrMessageEvent,
@@ -237,7 +238,9 @@ class ForwardContextMixin:
         )
 
         return result
+    # endregion 转发上下文主流程
 
+    # region 候选收集
     async def _collect_current_forward_candidates(
         self,
         event: AstrMessageEvent,
@@ -483,7 +486,9 @@ class ForwardContextMixin:
                     }
                 )
         return candidates
+    # endregion 候选收集
 
+    # region 转发提取
     def _extract_forward_ids_from_raw_message(self, raw_message: Any) -> list[str]:
         ids: list[str] = []
         if isinstance(raw_message, list):
@@ -613,7 +618,9 @@ class ForwardContextMixin:
         if len(text) > 120:
             return text[:120] + "...(已截断)"
         return text
+    # endregion 转发提取
 
+    # region 候选策略
     def _pick_best_forward_candidate(
         self,
         candidates: list[dict[str, Any]],
@@ -685,7 +692,9 @@ class ForwardContextMixin:
         if history_error:
             return f"{base}；{history_error}"
         return base
+    # endregion 候选策略
 
+    # region 转发展开
     async def _expand_forward_context(
         self,
         event: AstrMessageEvent,
@@ -867,7 +876,9 @@ class ForwardContextMixin:
                 + " | ".join(errors[:3]),
             )
         return [], f"未获取到合并转发内容(forward_id={forward_id})"
+    # endregion 转发展开
 
+    # region 节点展开
     def _normalize_forward_node(self, raw_node: Any) -> dict[str, Any] | None:
         if not isinstance(raw_node, dict):
             return None
@@ -1249,7 +1260,9 @@ class ForwardContextMixin:
 
         _walk(obj)
         return list(dict.fromkeys([x for x in ids if x]))
+    # endregion 节点展开
 
+    # region 结果缓存
     async def _load_forward_result_cache(self, forward_id: str) -> dict[str, Any] | None:
         cache_key = f"forward_context_cache:{str(forward_id).strip()}"
         if not str(forward_id).strip():
@@ -1294,7 +1307,9 @@ class ForwardContextMixin:
                 normalized_forward_id,
                 exc,
             )
+    # endregion 结果缓存
 
+    # region 图片识别
     @staticmethod
     def _extract_media_inputs_from_cq_string(message_text: str, media_type: str) -> list[str]:
         key = "image" if media_type == "image" else "video"
@@ -1490,7 +1505,9 @@ class ForwardContextMixin:
             "image_safety",
         )
         return any(keyword in text for keyword in policy_keywords)
+    # endregion 图片识别
 
+    # region 文本输出
     @staticmethod
     def _public_media_ref(media_input: str) -> str:
         raw = str(media_input or "").strip()
@@ -1625,3 +1642,4 @@ class ForwardContextMixin:
             if seq:
                 return seq
         return None
+    # endregion 文本输出

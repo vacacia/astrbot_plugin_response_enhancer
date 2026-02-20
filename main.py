@@ -1,24 +1,3 @@
-from __future__ import annotations
-
-import json
-import re
-import time
-from typing import Any
-
-import astrbot.api.message_components as Comp
-from astrbot.api import logger
-from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.provider import ProviderRequest
-from astrbot.api.star import Context, Star, register
-
-from .core import (
-    AvatarMixin,
-    CommonMixin,
-    ForwardContextMixin,
-    GroupMixin,
-    ImageContextMixin,
-    SilenceMixin,
-)
 """
 # 建议将“何时调用工具”的策略补充在人格设定里。
 贴表情工具:
@@ -42,16 +21,26 @@ from .core import (
     - 可用于混合内容（文本/图片/表情/视频占位）的转发消息理解。
 """
 
-# region 伪工具调用正则
-# 匹配 LLM 误把工具调用当纯文本输出的正则
-# 可能出现在整条消息开头，也可能追加在正常回复末尾
-# 例如 "blabla\ntool_react_emoji: 😜"
-_FAKE_TOOL_CALL_RE = re.compile(
-    r"\n?\s*(?:tool_)?(?:react_emoji|skip_reply|reply_message|send_message_at|silence_user|mute_user|get_silence_list|get_group_owner_info|get_group_admins_info|get_group_member_count|get_user_avatar|get_recent_image_context|get_forward_context)\s*[:：].*$",
-    re.IGNORECASE | re.DOTALL,
-)
-# endregion 伪工具调用正则
 
+from __future__ import annotations
+
+import json
+import time
+from typing import Any
+
+from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.provider import ProviderRequest
+from astrbot.api.star import Context, Star, register
+
+from .core import (
+    AvatarMixin,
+    CommonMixin,
+    ForwardContextMixin,
+    GroupMixin,
+    ImageContextMixin,
+    SilenceMixin,
+)
 
 # region QQ 表情映射表
 # 键 = LLM 可见的 emoji 名称，值 = QQ 实际 emoji_id
@@ -107,6 +96,12 @@ class ResponseEnhancer(
             max_value=2592000,
             default=86400,
         )
+        self.group_mute_max_seconds = self._clamp_int(
+            config.get("group_mute_max_seconds", 2592000),
+            min_value=1,
+            max_value=2592000,
+            default=2592000,
+        )
         self.silence_scope_default = str(
             config.get("silence_scope_default", "session") or "session"
         ).lower()
@@ -114,115 +109,13 @@ class ResponseEnhancer(
     # region 屏蔽被拉黑用户
 
     @filter.on_llm_request(priority=10000)
-    async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
+    async def on_llm_request(self, event: AstrMessageEvent, _req: ProviderRequest):
         """如果用户处于 silence 屏蔽期，直接阻止 LLM 调用。"""
         if await self._is_silenced(event):
             event.should_call_llm(False)
             event.stop_event()
             return
-
-        self._inject_reply_type_hint_into_prompt(event=event, req=req)
-
-    def _inject_reply_type_hint_into_prompt(
-        self,
-        event: AstrMessageEvent,
-        req: ProviderRequest,
-    ) -> None:
-        """把“引用消息类型”提示注入 prompt，降低模型误判工具的概率。"""
-        try:
-            segments = list(event.get_messages() or [])
-        except Exception:
-            segments = []
-
-        reply_seg = next(
-            (segment for segment in segments if isinstance(segment, Comp.Reply)),
-            None,
-        )
-        if reply_seg is None:
-            return
-
-        tags = self._collect_reply_type_tags(reply_seg)
-        if not tags:
-            tags = ["[引用消息]"]
-
-        tags_text = " ".join(list(dict.fromkeys(tags)))
-        hint = (
-            "\n\n[引用消息提示] 当前用户消息包含引用。"
-            f"引用内容类型: {tags_text}。"
-            "若用户提问出现“这/里面/上面”等指代词，先按引用对象判断，再选择合适工具。"
-        )
-        prompt = str(req.prompt or "")
-        if hint in prompt:
-            return
-        req.prompt = prompt + hint
-
-    def _collect_reply_type_tags(self, reply_seg: Comp.Reply) -> list[str]:
-        tags: list[str] = ["[引用消息]"]
-        video_cls = getattr(Comp, "Video", None)
-
-        try:
-            reply_chain = list(getattr(reply_seg, "chain", []) or [])
-        except Exception:
-            reply_chain = []
-
-        for segment in reply_chain:
-            if isinstance(segment, Comp.Forward):
-                tags.append("[合并转发]")
-            elif isinstance(segment, Comp.Image):
-                tags.append("[图片]")
-            elif video_cls and isinstance(segment, video_cls):
-                tags.append("[视频]")
-            elif isinstance(segment, Comp.Face):
-                tags.append("[表情]")
-            elif isinstance(segment, Comp.File):
-                tags.append("[文件]")
-
-        # 兼容某些平台没有填充 chain，仅能从 message_str 推断
-        message_str = str(getattr(reply_seg, "message_str", "") or "")
-        if "[合并转发]" in message_str or "[转发消息]" in message_str:
-            tags.append("[合并转发]")
-        if "[图片]" in message_str:
-            tags.append("[图片]")
-        if "[视频]" in message_str:
-            tags.append("[视频]")
-
-        return list(dict.fromkeys(tags))
     # endregion 屏蔽被拉黑用户
-
-    # region 清理伪工具调用文本
-
-    @filter.on_decorating_result()
-    async def on_decorating_result(self, event: AstrMessageEvent):
-        """剥离 LLM 回复末尾的伪工具调用文本（如 'tool_react_emoji: 😜'）。"""
-        result = event.get_result()
-        if result is None or not result.chain:
-            return
-
-        # 拼出纯文本
-        text = "".join(
-            comp.text for comp in result.chain if isinstance(comp, Comp.Plain)
-        ).strip()
-
-        if not text or not _FAKE_TOOL_CALL_RE.search(text):
-            return
-
-        cleaned = _FAKE_TOOL_CALL_RE.sub("", text).strip()
-        logger.info(
-            "[response_enhancer] 剥离伪工具调用文本: %s",
-            text[:120],
-        )
-
-        if not cleaned:
-            # 整条消息都是伪工具调用，取消发送
-            event.set_result(None)
-        else:
-            # 用清理后的文本替换原 chain 中的 Plain 部分
-            new_chain = [
-                comp for comp in result.chain if not isinstance(comp, Comp.Plain)
-            ]
-            new_chain.append(Comp.Plain(cleaned))
-            result.chain = new_chain
-    # endregion 清理伪工具调用文本
 
     # region 表情回应
 
@@ -305,33 +198,55 @@ class ResponseEnhancer(
             duration_seconds(number): 屏蔽时长（秒），默认 3600 秒（1 小时）
             scope(string): 屏蔽范围，session 仅当前会话，global 全局屏蔽，默认 session
         """
-        if duration_seconds is None:
-            duration_seconds = 3600
-
-        user_id = str(user_id).strip()
-        if not user_id.isdigit():
-            return "user_id 必须是纯数字 QQ 号"
-
-        try:
-            duration_seconds = int(duration_seconds)
-        except Exception:
-            return "屏蔽时长参数无效"
-
-        if duration_seconds <= 0:
-            return "屏蔽时长必须大于 0"
-
-        scope = str(scope or self.silence_scope_default).lower()
-        if scope not in ("session", "global"):
-            scope = "session"
-
-        expire_at = int(time.time()) + duration_seconds
-        key = self._silence_key(scope, event, str(user_id))
-        await self.put_kv_data(key, expire_at)
-        await self._upsert_silence_index(scope, event, user_id, expire_at)
-
-        scope_desc = "全局" if scope == "global" else "当前会话"
-        return f"已屏蔽用户 {user_id}，范围: {scope_desc}，时长 {duration_seconds} 秒"
+        return await self._silence_user_result(
+            event=event,
+            user_id=user_id,
+            duration_seconds=duration_seconds,
+            scope=scope,
+            mute_max_seconds=self.mute_max_seconds,
+            silence_scope_default=self.silence_scope_default,
+        )
     # endregion 屏蔽用户
+
+    # region 群管理员禁言
+
+    @filter.llm_tool(name="group_mute_user")
+    async def tool_group_mute_user(
+        self,
+        event: AstrMessageEvent,
+        user_id: str | None = None,
+        duration_seconds: int | None = None,
+        trigger_mode: str = "request",
+        reason: str | None = None,
+    ):
+        """在群聊中禁言或解除禁言指定用户（平台级禁言，不同于 silence_user）。
+
+        适用场景：
+            - trigger_mode=request: 群管明确要求禁言/解禁。
+            - trigger_mode=auto: 你判断话题风险较高(如政治敏感煽动、持续挑衅引战等)，需主动处置。
+            - 严谨滥用, 这不是泄私愤的工具
+
+        限制规则：
+            - 仅群聊可用。
+            - request 模式下，发起者必须是群主或管理员。
+            - bot必须是群主或管理员。
+            - 仅允许操作普通成员(member)，不能操作群主或管理员。
+
+        Args:
+            user_id(string): 目标用户 QQ 号，不传默认当前发言者
+            duration_seconds(number): 禁言时长（秒），默认 600; 0 表示解除禁言
+            trigger_mode(string): 触发模式，可选 request/auto, 默认 request
+            reason(string): 本次操作原因(给模型用于组织回复)
+        """
+        return await self._group_mute_user_result(
+            event=event,
+            user_id=user_id,
+            duration_seconds=duration_seconds,
+            trigger_mode=trigger_mode,
+            reason=reason,
+            group_mute_max_seconds=self.group_mute_max_seconds,
+        )
+    # endregion 群管理员禁言
 
     # region 查询拉黑列表
 
@@ -507,7 +422,7 @@ class ResponseEnhancer(
         return json.dumps(avatar_result, ensure_ascii=False)
     # endregion 获取用户头像
 
-    # region 提取最近图片上下文
+    # region 提取图片
 
     @filter.llm_tool(name="get_recent_image_context")
     async def tool_get_recent_image_context(
@@ -519,6 +434,8 @@ class ResponseEnhancer(
     ):
         """
         提取当前群聊中的最近图片上下文，并返回视觉识别结果。
+
+        触发线索：消息里出现 `[图片]` 或 `[Image]`, 用户请求可能和图片相关
 
         Args:
             target_user_id(string): 优先匹配的目标用户 QQ 号，不传时默认当前发言者
@@ -547,10 +464,11 @@ class ResponseEnhancer(
             user_request=user_request,
         )
         return json.dumps(result, ensure_ascii=False)
-    # endregion 提取最近图片上下文
+    # endregion 提取图片
 
-    # region 提取合并转发上下文
+    # region 提取合并转发
 
+    # 以下占位符由 AstrBot 消息构造链路注入，供工具触发判断使用。
     @filter.llm_tool(name="get_forward_context")
     async def tool_get_forward_context(
         self,
@@ -561,6 +479,10 @@ class ResponseEnhancer(
     ):
         """
         提取合并转发消息上下文，展开嵌套内容并返回结构化结果。
+
+        触发线索：
+            - 引用消息文本为 `[Empty Text]`
+            - 消息摘要出现 `[转发消息]`
 
         Args:
             target_user_id(string): 优先匹配的目标用户 QQ 号，不传时默认当前发言者
@@ -589,4 +511,4 @@ class ResponseEnhancer(
             user_request=user_request,
         )
         return json.dumps(result, ensure_ascii=False)
-    # endregion 提取合并转发上下文
+    # endregion 提取合并转发

@@ -7,6 +7,57 @@ from astrbot.api.event import AstrMessageEvent
 
 
 class SilenceMixin:
+    async def _silence_user_result(
+        self,
+        event: AstrMessageEvent,
+        *,
+        user_id: str,
+        duration_seconds: int | None,
+        scope: str | None,
+        mute_max_seconds: int,
+        silence_scope_default: str,
+    ) -> str:
+        if duration_seconds is None:
+            duration_seconds = 3600
+
+        target_user_id = str(user_id).strip()
+        if not target_user_id.isdigit():
+            return "user_id 必须是纯数字 QQ 号"
+
+        try:
+            duration = int(duration_seconds)
+        except Exception:
+            return "屏蔽时长参数无效"
+
+        if duration <= 0:
+            return "屏蔽时长必须大于 0"
+
+        requested_duration = duration
+        duration = min(duration, mute_max_seconds)
+        duration_truncated = duration != requested_duration
+
+        normalized_scope = str(scope or silence_scope_default).lower()
+        if normalized_scope not in ("session", "global"):
+            normalized_scope = "session"
+
+        expire_at = int(time.time()) + duration
+        key = self._silence_key(normalized_scope, event, target_user_id)
+        await self.put_kv_data(key, expire_at)
+        await self._upsert_silence_index(
+            normalized_scope, event, target_user_id, expire_at
+        )
+
+        scope_desc = "全局" if normalized_scope == "global" else "当前会话"
+        duration_note = ""
+        if duration_truncated:
+            duration_note = (
+                f"（请求 {requested_duration} 秒，已按上限截断到 {duration} 秒）"
+            )
+        return (
+            f"已屏蔽用户 {target_user_id}，范围: {scope_desc}，时长 {duration} 秒"
+            f"{duration_note}"
+        )
+
     async def _is_silenced(self, event: AstrMessageEvent) -> bool:
         user_id = str(event.get_sender_id())
         now = int(time.time())

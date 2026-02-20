@@ -13,6 +13,7 @@ except Exception:
 
 
 class AvatarMixin:
+    # region 头像获取
     async def _get_user_avatar(
         self,
         event: AstrMessageEvent,
@@ -69,7 +70,9 @@ class AvatarMixin:
             "avatar_url": fallback_url,
             "error": "头像获取失败: " + " | ".join(errors) if errors else "头像获取失败",
         }
+    # endregion 头像获取
 
+    # region 头像识图
     async def _analyze_avatar_with_vision_model(
         self,
         event: AstrMessageEvent,
@@ -149,7 +152,9 @@ class AvatarMixin:
             provider_candidates[0],
             "头像视觉识别失败: " + " | ".join(errors) if errors else "头像视觉识别失败",
         )
+    # endregion 头像识图
 
+    # region 提示词与请求
     @staticmethod
     def _build_avatar_vision_prompt(
         user_request: str, safety_fallback: bool = False
@@ -241,7 +246,9 @@ class AvatarMixin:
             return "base64://" + encoded
 
         return None
+    # endregion 提示词与请求
 
+    # region NapCat头像
     async def _try_napcat_avatar_url(
         self,
         event: AstrMessageEvent,
@@ -307,7 +314,9 @@ class AvatarMixin:
             logger.debug("[response_enhancer] query napcat avatar failed: %s", exc)
 
         return None
+    # endregion NapCat头像
 
+    # region 下载与解析
     async def _download_avatar_data_uri(
         self,
         avatar_url: str,
@@ -380,3 +389,4 @@ class AvatarMixin:
         if size > 1000:
             size = 1000
         return f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s={size}"
+    # endregion 下载与解析

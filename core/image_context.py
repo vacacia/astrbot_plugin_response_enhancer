@@ -10,6 +10,7 @@ from astrbot.api.event import AstrMessageEvent
 
 
 class ImageContextMixin:
+    # region 图片上下文主流程
     async def _get_recent_image_context_result(
         self,
         event: AstrMessageEvent,
@@ -115,7 +116,9 @@ class ImageContextMixin:
             result["image_analysis"] = analysis_text
 
         return result
+    # endregion 图片上下文主流程
 
+    # region 图片候选收集
     async def _collect_current_image_candidates(
         self,
         event: AstrMessageEvent,
@@ -301,7 +304,9 @@ class ImageContextMixin:
                 )
 
         return candidates
+    # endregion 图片候选收集
 
+    # region 消息解析
     @staticmethod
     def _extract_text_preview_from_segments(segments: list[dict[str, Any]]) -> str:
         text_parts: list[str] = []
@@ -412,7 +417,9 @@ class ImageContextMixin:
         return str(value).startswith(
             ("http://", "https://", "base64://", "file:///", "/")
         )
+    # endregion 消息解析
 
+    # region 候选选择
     def _pick_best_image_candidate(
         self,
         candidates: list[dict[str, Any]],
@@ -448,7 +455,9 @@ class ImageContextMixin:
         if history_error:
             return f"{base}；{history_error}"
         return base
+    # endregion 候选选择
 
+    # region 图片识别
     async def _analyze_recent_image_with_vision_model(
         self,
         event: AstrMessageEvent,
@@ -610,3 +619,4 @@ class ImageContextMixin:
         if "/" in raw:
             return raw.split("/")[-1]
         return raw
+    # endregion 图片识别

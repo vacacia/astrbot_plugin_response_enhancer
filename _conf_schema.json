@@ -1,9 +1,15 @@
 {
   "mute_max_seconds": {
-    "description": "禁言时长上限（秒）",
+    "description": "屏蔽时长上限（秒）",
     "type": "int",
     "default": 86400,
-    "hint": "LLM 调用 mute_user 工具时，禁言时长不会超过此值。默认 86400（1天）"
+    "hint": "LLM 调用 silence_user 工具时，屏蔽时长不会超过此值（插件级静默/拉黑，不是平台禁言）。默认 86400（1天）"
+  },
+  "group_mute_max_seconds": {
+    "description": "群禁言时长上限（秒）",
+    "type": "int",
+    "default": 2592000,
+    "hint": "LLM 调用 group_mute_user 工具时，duration_seconds 不会超过此值。0 代表解除禁言。默认 2592000（30天）"
   },
   "silence_scope_default": {
     "description": "屏蔽默认作用域",
